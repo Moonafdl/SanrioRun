@@ -1,5 +1,6 @@
 import pygame
 import os
+import csv
 
 pygame.init()
 
@@ -17,6 +18,19 @@ FPS = 60
 GRAVITY = 0.75
 moving_left = False
 moving_right = False
+ROWS = 16
+COLS = 150
+TILE_SIZE = SCREEN_HEIGHT // ROWS
+TILE_TYPES = 21
+level = 1
+
+# Load images 
+# Store tiles in a list
+img_list = []
+for x in range(TILE_TYPES):
+    img = pygame.image.load(f'image/tile/{x}.png')
+    img = pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
+    img_list.append(img)
 
 # Colors
 PINK = (255, 192, 203)
@@ -104,18 +118,106 @@ class Cinna(pygame.sprite.Sprite):
     def draw(self):
         screen.blit(pygame.transform.flip(self.image, self.flip, False), self.rect)
 
-# Player initialization
-player = Cinna('player', 200, 600, 0.5, 5)  # Reduce scale to 0.5
+class World():
+    def __init__(self):
+        self.obstacle_list = []
+
+    def process_data(self, data):
+        # Iterate through each value in level data file 
+        for y, row in enumerate(data):
+            for x, tile in enumerate(row):
+                if tile >= 0:
+                    img = img_list[tile]
+                    img_rect = img.get_rect()
+                    img_rect.x = x * TILE_SIZE
+                    img_rect.y = y * TILE_SIZE
+                    tile_data = (img, img_rect)
+                    if tile >= 0 and tile <= 8:
+                        self.obstacle_list.append(tile_data)
+                    elif tile >= 9 and tile <= 10:
+                        water = Water(img, x * TILE_SIZE, y * TILE_SIZE)
+                        water_group.add(decoration)
+                    elif tile >= 11 and tile <= 14:
+                        decoration = Decoration(img, x * TILE_SIZE, y * TILE_SIZE)
+                        decoration_group.add(decoration)
+                    elif tile == 15:    # cretae player     
+                        player = Cinna('player', 200, 600, 1.65, 5)
+                    elif tile == 16: #Create enemy
+                        enemy = Cinna('player', 200, 600, 1.65, 5)
+                    # elif tile == 19: # create health box
+                    elif tile == 20:    # create exit 
+                        exit = Exit(img, x * TILE_SIZE, y * TILE_SIZE)
+                        exit_group.add(decoration)
+
+        return player
+
+    def draw(self):
+        for tile in self.obstacle_list:
+            screen.blit(tile[0], tile[1])
+
+class Water(pygame.sprite.Sprite):
+    def __init__(self, img, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = img
+        self.rect = self.image.get_rect()
+        self.rect.midtop = (x + TILE_SIZE // 2, y + (TILE_SIZE - self.image.get_height()))
+
+class Decoration(pygame.sprite.Sprite):
+    def __init__(self, img, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = img
+        self.rect = self.image.get_rect()
+        self.rect.midtop = (x + TILE_SIZE // 2, y + (TILE_SIZE - self.image.get_height()))
+
+class Exit(pygame.sprite.Sprite):
+    def __init__(self, img, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = img
+        self.rect = self.image.get_rect()
+        self.rect.midtop = (x + TILE_SIZE // 2, y + (TILE_SIZE - self.image.get_height()))
+                    
+
+# Create empty tile list 
+world_data = []
+for row in range(ROWS):
+    r = [-1] * COLS 
+    world_data.append(r)
+
+# Load in level data and create world
+with open(f'level{level}_data.csv', newline = '') as csvfile:
+    reader =  csv.reader(csvfile, delimiter = ',')
+    for x, row in enumerate(reader):
+        for y, tile in enumerate(row):
+            world_data[x][y] = int(tile)
+
+world = World()
+decoration_group = pygame.sprite.Group()
+water_group = pygame.sprite.Group()
+exit_group = pygame.sprite.Group()
+player = world.process_data(world_data)
 
 # Game loop
 run = True
 while run:
     clock.tick(FPS)
+
+    # Update Backgroup
     draw_bg()
+
+    # draw world map
+    world.draw()
 
     player.update_animation()
     player.move(moving_left, moving_right)
     player.draw()
+
+    # update and draw groups 
+    decoration_group.update()
+    water_group.update()
+    exit_group.update()
+    decoration_group.draw(screen)
+    water_group.draw(screen)
+    exit_group.draw(screen)
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
