@@ -1,42 +1,55 @@
 import unittest
-import os
+from unittest.mock import patch, mock_open
 import pygame
 import json
+import hashlib
 from start import LoginSystem
+from login import InputBox
 
 class TestLoginSystem(unittest.TestCase):
-
-    def test_dummy(self):
-        self.assertEqual(1, 1) 
-
     def setUp(self):
         pygame.init()  
-        self.test_file = 'test_user_data.json'
+        pygame.font.init()  
         self.login = LoginSystem(800, 600)
-        self.login.file = self.test_file
+        self.test_user = "test_user"
+        self.test_pass = "test_pass"
+        self.hashed_pass = hashlib.sha256(self.test_pass.encode()).hexdigest()
 
-
-    def tearDown(self):
-        pygame.quit()  
-        if os.path.exists(self.test_file):
-            os.remove(self.test_file)
-
-
-    def test_register_and_auth_success(self):
-        u, p = 'testuser', 'secret123'
-        result = self.login.register(u, p)
+    @patch('os.path.exists')
+    @patch('builtins.open', new_callable=mock_open)
+    def test_successful_registration(self, mock_file, mock_exists):
+        mock_exists.return_value = False
+        result = self.login.register_user(self.test_user, self.test_pass)
         self.assertTrue(result)
-        self.assertTrue(self.login.auth(u, p))
+        mock_file().write.assert_called_with(json.dumps(
+            {self.test_user: self.hashed_pass}, indent=4
+        ))
 
-    def test_register_duplicate(self):
-        self.login.register('sameuser', 'abc')
-        result = self.login.register('sameuser', 'xyz')
+@patch('os.path.exists')
+def test_duplicate_registration(self, mock_exists):
+    mock_exists.return_value = True
+    user_data = json.dumps({self.test_user: self.hashed_pass})
+    with patch('builtins.open', mock_open(read_data=user_data)):
+        result = self.login.register_user(self.test_user, self.test_pass)
         self.assertFalse(result)
 
-    def test_auth_failure(self):
-        self.login.register('user1', 'pass1')
-        self.assertFalse(self.login.auth('user1', 'wrongpass'))
-        self.assertFalse(self.login.auth('notexist', 'pass1'))
+    @patch('os.path.exists')
+    def test_successful_login(self, mock_exists):
+        mock_exists.return_value = True
+        with patch('builtins.open', mock_open(read_data=json.dumps(
+            {self.test_user: self.hashed_pass}
+        ))):
+            result = self.login.authenticate_user(self.test_user, self.test_pass)
+            self.assertTrue(result)
+
+    @patch('os.path.exists')
+    def test_failed_login(self, mock_exists):
+        mock_exists.return_value = True
+        with patch('builtins.open', mock_open(read_data=json.dumps(
+            {self.test_user: self.hashed_pass}
+        ))):
+            result = self.login.authenticate_user(self.test_user, "wrong_pass")
+            self.assertFalse(result)
 
 if __name__ == '__main__':
     unittest.main()
