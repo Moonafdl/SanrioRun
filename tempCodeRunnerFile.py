@@ -12,18 +12,6 @@ BUTTON_BG     = (255, 182, 193)
 BUTTON_HOVER  = (255, 105, 180)
 TEXT_COLOR    = (180, 30, 75)
 
-# Tiles 0–8 are solid ground (for both player and enemy)
-# Tiles like 13, 14 can optionally support enemies only
-SOLID_FOR_PLAYER = {0, 1, 2, 3, 4, 5, 6, 7, 8}
-SOLID_FOR_ENEMY  = {0, 1, 2, 3, 4, 5, 6, 7, 8,12, 13, 14,19}
-WATER_TILES = {9,10}
-
-
-current_level = 1
-MAX_LEVEL = 3
-
-
-
 # ——— Helper: draw rounded rect ———
 def draw_rounded_rect(surf, rect, color, radius=12):
     pygame.draw.rect(surf, color, rect, border_radius=radius)
@@ -219,79 +207,53 @@ def pause_menu():
 # ——— Save/Load Game State ———
 # will be set per-user after login
 SAVE_FILE = None
-defeated_enemies = set()
-
 
 def save_state():
     state = {
         'player_x': player.rect.x,
         'player_y': player.rect.y,
-        'screen_scroll': screen_scroll,
-        'defeated_enemies': list(defeated_enemies),
-        'current_level': current_level
+        'screen_scroll': screen_scroll
     }
     with open(SAVE_FILE, 'w') as f:
         json.dump(state, f)
 
 def load_state():
-    global current_level
     if not SAVE_FILE or not os.path.exists(SAVE_FILE):
         return False
     try:
         st = json.load(open(SAVE_FILE))
-
-        # Load the level first
-        current_level = st.get('current_level', 1)
-        reset_level(current_level)
-
-        # Set position and other state
         player.rect.x = st['player_x']
         player.rect.y = st['player_y']
-        defeated_enemies.update(st.get('defeated_enemies', []))
-
         return st['screen_scroll']
     except:
         return False
-
-
 
 # ——— Reset Level & Draw Background ———
 enemy_group = pygame.sprite.Group()
 
 def find_ground_y(x_pos, world):
+    """Find the Y coordinate of the top solid tile at x_pos"""
     for y in range(ROWS):
         for x in range(COLS):
             if x * TILE_SIZE <= x_pos < (x + 1) * TILE_SIZE:
                 t = world.data[y][x]
-                if t in SOLID_FOR_ENEMY:
+                if 0 <= t <= 8:
                     return y * TILE_SIZE
-    return SCREEN_HEIGHT - TILE_SIZE
+    return SCREEN_HEIGHT - TILE_SIZE  # fallback ground level
 
 
-
-
-
-def reset_level(level):
+def reset_level():
     global world, player, screen_scroll, bg_scroll
-    water_group.empty()
-    decoration_group.empty()
-    exit_group.empty()
-    enemy_group.empty()
-    water_group.empty()
-
-
+    water_group.empty(); decoration_group.empty(); exit_group.empty(); enemy_group.empty()
     data = [[-1] * COLS for _ in range(ROWS)]
-    path = f'levels/level{level}_data.csv'
-
-    with open(path, newline='') as f:
+    with open('level1_data.csv', newline='') as f:
         for y, row in enumerate(csv.reader(f)):
             for x, v in enumerate(row):
                 data[y][x] = int(v)
-
     world = World()
     player = world.process_data(data)
-    screen_scroll = bg_scroll = 0.0
 
+    screen_scroll = bg_scroll = 0.0
 
 def draw_health_bar(surface, x, y, current, max_health):
     bar_width = 200
@@ -317,38 +279,6 @@ def draw_bg(s):
         screen.blit(pine2_img,    (i * w - int(s * 0.8),
                                     SCREEN_HEIGHT - pine2_img.get_height()))
 
-def win_screen():
-    font = pygame.font.SysFont('Arial', 64, bold=True)
-    btn_font = pygame.font.SysFont('Arial', 32, bold=True)
-    btn = pygame.Rect(0, 0, 300, 70)
-    btn.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 100)
-
-    while True:
-        mx, my = pygame.mouse.get_pos()
-        for e in pygame.event.get():
-            if e.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
-            if e.type == pygame.MOUSEBUTTONDOWN and btn.collidepoint(e.pos):
-                pygame.quit()
-                sys.exit()
-
-        # Background
-        screen.fill(BG_GAME)
-
-        # Win Text
-        text = font.render("You Won! Congrats!", True, DARK_PINK)
-        screen.blit(text, text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 80)))
-
-        # Button
-        color = BUTTON_HOVER if btn.collidepoint((mx, my)) else BUTTON_BG
-        draw_rounded_rect(screen, btn, color, 12)
-        label = btn_font.render("Exit Game", True, WHITE)
-        screen.blit(label, label.get_rect(center=btn.center))
-
-        pygame.display.update()
-        clock.tick(60)
-
-
 # ——— Player & World Classes ———
 class Cinna(pygame.sprite.Sprite):
     def __init__(self, x, y):
@@ -356,9 +286,9 @@ class Cinna(pygame.sprite.Sprite):
         self.speed, self.vel_y = 5, 0
         self.jump, self.in_air = False, True
         self.jumps, self.flip   = 0, False
-        self.health = 5
+        self.health = 3
         self.last_hit_time = 0
-        self.max_health = 5
+        self.max_health = 3
 
         self.pushback_x = 0
         self.frames = []
@@ -435,7 +365,6 @@ class Enemy(pygame.sprite.Sprite):
         self.start_x = x
 
     def die(self):
-        defeated_enemies.add(self.enemy_id)
         self.kill()  
 
 
@@ -489,61 +418,27 @@ class World:
             for x, t in enumerate(row):
                 if t < 0:
                     continue
-
-                # Enemy spawn (tile 30)
                 if t == 30:
-                    enemy_id = f"{x},{y}"
-                    if enemy_id not in defeated_enemies:
-                        px = x * TILE_SIZE
-                        ground_y = find_ground_y(px, self)
-                        enemy = Enemy(px, 0)
-                        enemy.rect.bottom = ground_y + TILE_SIZE
-                        enemy.enemy_id = enemy_id
-                        enemy_group.add(enemy)
-                    continue
-
+                    ground_y = find_ground_y(x * TILE_SIZE, self)
+                    enemy = Enemy(x * TILE_SIZE, ground_y)
+                    enemy_group.add(enemy)
+                    continue  # skip loading image for this tile
                 if t >= len(img_list):
-                    continue
+                    continue  # ignore unknown tiles
 
                 im = img_list[t]
                 rc = im.get_rect(topleft=(x * TILE_SIZE, y * TILE_SIZE))
-
-                # Only player stands on these tiles
-                if t in SOLID_FOR_PLAYER:
+                if 0 <= t <= 8:
                     self.obstacles.append((im, rc))
-
-                # Water tile 
-                elif t in WATER_TILES:
-                    spr = pygame.sprite.Sprite()
-                    spr.image, spr.rect = im, rc
-                    water_group.add(spr)
-
-                # Decoration (visual only)
-                elif 9 <= t <= 14:
-                    spr = pygame.sprite.Sprite()
-                    spr.image, spr.rect = im, rc
-                    decoration_group.add(spr)
-
-
-
-
-
-                # Player start
+                elif 9 <= t <= 10:
+                    spr = pygame.sprite.Sprite(); spr.image, spr.rect = im, rc; water_group.add(spr)
+                elif 11 <= t <= 14:
+                    spr = pygame.sprite.Sprite(); spr.image, spr.rect = im, rc; decoration_group.add(spr)
                 elif t == 15:
-                    player = Cinna(rc.x, rc.bottom - TILE_SIZE)
-
-                # Exit
+                    player = Cinna(rc.x, rc.y)
                 elif t == 20:
-                    spr = pygame.sprite.Sprite()
-                    spr.image, spr.rect = im, rc
-                    exit_group.add(spr)
-
+                    spr = pygame.sprite.Sprite(); spr.image, spr.rect = im, rc; exit_group.add(spr)
         return player
-
-
-
-
-
 
 
     def draw(self, si):
@@ -603,21 +498,16 @@ while not logged_in:
     pygame.display.update()
 
 # ——— 2) Start / Resume Game ———
-current_level = 1
-ss = load_state()  # this updates current_level from the save
-if ss is False:
-    reset_level(current_level)
-    screen_scroll = bg_scroll = 0.0
-else:
+reset_level()
+ss = load_state()
+if ss is not False:
     screen_scroll = bg_scroll = ss
-
 
 running = True
 while running:
     clock.tick(FPS)
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
-            save_state()
             running = False
         if e.type == pygame.KEYDOWN:
             if e.key == pygame.K_a: moving_left  = True
@@ -641,28 +531,12 @@ while running:
 
     player.move(moving_left, moving_right, world)
 
-    # --- Level Exit Check ---
-    for exit_tile in exit_group:
-        if player.rect.colliderect(exit_tile.rect):
-            current_level += 1
-            save_state()  # <— save before loading the next level
-            if current_level > MAX_LEVEL:
-                win_screen()
-                current_level = 1
-            reset_level(current_level)
-            screen_scroll = bg_scroll = 0.0
-            break
-
-
-
     died = (player.rect.top > SCREEN_HEIGHT or
             any(player.rect.colliderect(w.rect) for w in water_group))
     if died:
         pygame.event.clear()
         death_screen()
-        defeated_enemies.clear()
-        reset_level(current_level)
-
+        reset_level()
         # reset movement so you don’t keep sliding
         moving_left = moving_right = False
         continue
@@ -687,7 +561,6 @@ while running:
     for grp in (water_group, decoration_group, exit_group):
         for spr in grp:
             screen.blit(spr.image, (spr.rect.x - scroll_int, spr.rect.y))
-
     enemy_group.update()
     for enemy in enemy_group:
         enemy.draw(scroll_int)
@@ -722,8 +595,7 @@ while running:
                     if player.health <= 0:
                         pygame.event.clear()
                         death_screen()
-                        reset_level(current_level)
-
+                        reset_level()
                         moving_left = moving_right = False
                         break
 
@@ -733,6 +605,5 @@ while running:
     draw_health_bar(screen, 20, 20, player.health, player.max_health)
 
     pygame.display.update()
-
 
 pygame.quit()
